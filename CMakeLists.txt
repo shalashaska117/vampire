@@ -240,6 +240,11 @@ install(TARGETS vampire)
 ################################################################
 
 if(CMAKE_BUILD_TYPE STREQUAL Debug)
+  # Exercise GCC's vectorizer while keeping the test assertions enabled.
+  if(GCC_OR_CLANG)
+    set_property(SOURCE UnitTests/tHashVectorization.cpp APPEND PROPERTY COMPILE_OPTIONS -O3)
+  endif()
+
   foreach(test_file ${UNIT_TESTS})
     get_filename_component(test_name ${test_file} NAME_WE)
     string(REGEX REPLACE "^t" "" test_name ${test_name})

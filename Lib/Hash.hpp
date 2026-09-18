@@ -128,11 +128,11 @@ struct FnvHash
     static_assert(
       std::is_arithmetic<T>::value || std::is_enum<T>::value,
       "FnvHash::hash(T) hashes the bytes of a scalar: supply a suitable hash for other types");
-    return hashBytes(
-      reinterpret_cast<const unsigned char *>(&val),
-      sizeof(val),
-      hash
-    );
+    // GCC can miscompile vectorized callers that read bytes directly from
+    // this by-value parameter. Copy its representation before hashing it.
+    unsigned char bytes[sizeof(val)];
+    std::memcpy(bytes, &val, sizeof(val));
+    return hashBytes(bytes, sizeof(bytes), hash);
   }
 
   // pointers are hashed as bytes without dereference

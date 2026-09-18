@@ -52,6 +52,7 @@ set(UNIT_TESTS
     UnitTests/tDynamicHeap.cpp
     UnitTests/tFunctionDefinitionHandler.cpp
     UnitTests/tHash.cpp
+    UnitTests/tHashVectorization.cpp
     UnitTests/tIndexManager.cpp
     UnitTests/tInferences_AnswerLiteralProcessors.cpp
     UnitTests/tInferences_ArithmeticSubtermGeneralization.cpp
