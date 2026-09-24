@@ -33,9 +33,9 @@ using namespace Kernel;
 using namespace Shell;
 
 
-void LRS::afterUnprocessedLoop(unsigned popsElapsed)
+void LRS::poppedFromUnprocessed()
 {
-  if(shouldUpdateLimits(popsElapsed)) {
+  if(shouldUpdateLimits()) {
     TIME_TRACE("LRS limit maintenance");
 
     // Charge this update against the maintenance budget. steady_clock rather than
@@ -126,16 +126,14 @@ bool LRS::withinMaintenanceBudget()
  * Return true if it is time to update age and weight
  * limits of the LRS strategy
  *
- * The pops counter sets the rate, exactly as before; the budget check can only ever
- * hold an update back. So this is a pure throttle: where updates are cheap the budget
- * never binds and the cadence is master's, and only the expensive runs -- the ones
- * where maintenance had grown to a large share of the run -- see any difference.
+ * The pop counter sets the cadence; the maintenance budget can defer an update.
+ * Check on each pop so a simplification cycle cannot starve limit maintenance.
  */
-bool LRS::shouldUpdateLimits(unsigned popsElapsed)
+bool LRS::shouldUpdateLimits()
 {
   openTraceFiles();
 
-  _leftoverPops += popsElapsed;
+  _leftoverPops++;
 
   if (replaying()) {
     // Replay must not consult the clock, the instruction counter or the budget:
