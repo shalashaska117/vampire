@@ -34,9 +34,9 @@ public:
   using Otter::Otter;
 
 protected:
-  void poppedFromUnprocessed() override;
+  void afterUnprocessedLoop(unsigned popsElapsed) override;
 
-  bool shouldUpdateLimits();
+  bool shouldUpdateLimits(unsigned popsElapsed);
 
   long long estimatedReachableCount();
 
