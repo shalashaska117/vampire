@@ -12,6 +12,20 @@ import xml.etree.ElementTree as ET
 
 def section(case):
     name = case['name']
+    if name.startswith('discovery/'): return 'Option discovery'
+    if name.startswith('behavior/'):
+        return {'shutdown': 'Shutdown memory paths', 'fmb-memory': 'FMB memory regressions',
+                'fmb-options': 'Finite-model options', 'roundtrip': 'TPTP output round trips',
+                'stdin': 'Standard input', 'resources': 'Resource option behavior',
+                'proof': 'Independent proof checks', 'portfolio': 'Portfolio schedules'}[name.split('/')[1]]
+    if name.startswith('options/'):
+        return {'values': 'Option documented values', 'aliases': 'Option short names',
+                'rejection': 'Invalid option values', 'boundary': 'Numeric option boundaries'}[name.split('/')[1]]
+    if name.startswith('edge/'):
+        return {'finite': 'Quantifier model oracle', 'functions': 'Function model oracle',
+                'metamorphic': 'Input transformations', 'equality': 'Equality and selection',
+                'theory': 'Theory identities', 'parser': 'Parser boundaries',
+                'rejection': 'Malformed inputs', 'interactions': 'Option interactions', 'hol': 'HOL option variants'}[name.split('/')[1]]
     if name.startswith('unit/'): return 'Unit tests'
     if name.startswith('generated/cnf-'): return 'Generated CNF'
     if name.startswith('generated/bool-'): return 'Boolean expressions'
@@ -58,8 +72,11 @@ def failure_detail(result, commands=False):
     lines = [f'[{tag}] {result["name"]} ({result.get("seconds", 0):.2f}s)',
              f'  Reason: {result.get("reason", "unknown")}',
              f'  Where:  {location(result)}']
-    if result.get('check') == 'szs':
+    if result.get('check') in ('szs', 'smt-proof', 'roundtrip'):
         lines.append(f'  Answer: expected {result["expected"]}; observed {", ".join(result.get("statuses", [])) or "no SZS status"}')
+    if result.get('semantic_outcome'):
+        lines.append(f'  Logical check: {result["semantic_outcome"]}; memory: {result.get("memory_outcome", "unknown")}')
+    for diagnostic in result.get('sanitizer_messages', [])[:2]: lines.append('  Sanitizer: ' + diagnostic)
     errors = Counter(e['kind'] for e in result.get('valgrind_errors', []))
     if errors:
         lines.append('  Memory: ' + ', '.join(f'{kind}={count}' for kind, count in sorted(errors.items())))

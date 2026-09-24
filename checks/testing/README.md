@@ -2,11 +2,37 @@
 
 This directory adds a repeatable test campaign to the existing unit tests and
 `checks/sanity`. Every run saves its commands, inputs, stdout, stderr, binary
-hashes, Git revision, and JSON results under a new output directory.
+hashes, Git revision, a Python harness snapshot, and JSON results under a new output directory.
 
-The current branch combines the fixes from upstream PRs #971 and #973. It does
-not establish that Vampire is correct for every input or option combination.
+This integration branch includes upstream master at
+0257b80f8ab86e7e9e89b7358c0d69105a433561, including merged PR #971, plus
+PR #973 at 4aa2d37488574324383a57d39dcdca680ce92370. The superseded LRS
+callback patch has been reverted. Keep these integration results separate from
+the master-only measurements in MASTER_TEST_PROGRESS.md.
+The target is 100% line, function, and branch coverage of the compiled implementation.
+That target has not been reached. No finite suite establishes correctness for every input or option combination.
 Coverage measures executed code; it does not prove correctness.
+
+## Run the master campaign
+
+```sh
+export Z3_DIR=/path/to/z3/build
+python3 checks/testing/campaign.py --output build/testing/results/master-new \
+  --jobs 8 --memcheck-jobs 12 --lcov-tool-dir /path/to/lcov/bin --z3 /path/to/z3
+```
+
+This builds and runs release, debug cleanup, UBSan, ASan, no-Z3, GCC coverage,
+and Valgrind stages in order. Each stage saves a command, log, and exit status.
+Failures do not stop unrelated stages. Timing-sensitive release sanity runs
+before instrumented work. A fresh campaign resets coverage counters only after
+saving existing counter files under its own output directory.
+
+`campaign.json` records stage outcomes. `coverage-gaps.json` lists uncovered
+lines, functions, and branches. `option-audit.json` separates parser tests from
+options explicitly present in solver commands; an explicit flag is not proof
+that its implementation ran. See [SCOPE.md](SCOPE.md) for the measured scope and
+remaining work. [PR_BRANCH_BASELINE.md](PR_BRANCH_BASELINE.md) is historical
+data from the earlier PR integration branch, not a result for master.
 
 ## Build profiles
 
@@ -32,6 +58,7 @@ Profiles have separate build directories under `build/testing/`:
 | `coverage` | Debug assertions, cleanup, GCC line/function/branch counters |
 | `release` | Existing sanity tests, including timing and LRS replay |
 | `memcheck` | Debug assertions and cleanup, without coverage overhead |
+| `asan` | AddressSanitizer and leak detection, including cleanup |
 | `ubsan` | Undefined-behavior sanitizer; stops on the first diagnostic |
 | `no-z3` | Debug build with Z3 disabled |
 | `debug` | Debug assertions and cleanup |
@@ -45,7 +72,7 @@ Run commands from the repository root. Choose a fresh output directory for each
 invocation; the runner refuses to overwrite earlier results.
 
 ```sh
-python3 checks/testing/test_runner.py
+python3 -m unittest discover -s checks/testing -p 'test_*.py'
 python3 checks/testing/run.py inventory --output build/testing/inventory.json
 python3 checks/testing/run.py run --suite all --jobs 4 \
   --output build/testing/results/coverage-all
@@ -73,7 +100,13 @@ The suites are:
   checks, and LRS trace replay. This is separate from `all`.
 - `features`: bounded finite-model cardinality, one/two-worker portfolios, and
   proof-output smoke tests. These do not independently certify emitted proofs.
-- `all`: units, imported corpus assertions, generated cases, and feature tests.
+- `edges`: finite-model oracles, equality, input transformations, theory identities, and parser boundaries.
+- `options`: every documented option value and alias, invalid typed values, and numeric boundaries. These check parsing, not feature behavior.
+- `behavior`: shutdown repetitions, reduced FMB memory regressions, finite-model
+  option behavior, output/clausification/preprocessing round trips, stdin,
+  resource limits, every built-in schedule, schedule files, and SMT proof obligations.
+- `all`: units, imported corpus assertions, generated cases, features, edges,
+  options, behavior, and an explicit option-discovery check.
 
 The default seed is fixed and recorded. Use `--seed` for another reproducible
 Boolean corpus. `--filter` selects case names by regular expression. `--limit`
@@ -101,18 +134,69 @@ file is applied. `CHECK_LEAKS=ON` enables Vampire's optional cleanup paths.
 
 The solver's internal timer is disabled for Memcheck, with a wall limit on each
 process group instead. Killing a timed-out group can leave incomplete XML and
-prevent final leak analysis; that result is inconclusive. Use a separate
+prevent final leak analysis; that result is inconclusive unless a memory error
+was already recorded. Existing diagnostics still fail the case. Use a separate
 `--solver-timeout` to override this policy.
 
 See the [Memcheck manual](https://valgrind.org/docs/manual/mc-manual.html) for
 the distinction between reachable allocations and lost allocations.
+
+## Behavior and proof checks
+
+```sh
+python3 checks/testing/run.py run --suite behavior --build build/testing/release \
+  --z3 /path/to/z3 --output build/testing/results/behavior
+```
+
+The current Z3-enabled catalogue produces 229 behavior cases. Finite-model
+fixtures have closed domains with known answers. SMT-COMP schedules receive
+quantified UF inputs; they reject quantifier-free logics. Schedule-file cases
+check valid strategies, comments, blank lines, missing files, and invalid input.
+
+Round-trip checks reparse emitted TPTP and compare the new answer with the
+fixture's expected answer. An empty clause set is valid for a satisfiable input;
+erasing a contradiction fails. These are bounded semantic checks using Vampire
+for both executions, so shared solver errors can escape them. The secondary
+execution is saved in `validator-command.json` and is not wrapped in Valgrind.
+
+For `--proof smtcheck`, Z3 checks the emitted inference obligations. SAT answers,
+malformed scripts, or missing answers fail. Unknown answers and explicit
+unsupported proof rules are inconclusive. Even a pass covers only the emitted
+obligations: skipped input and definition introduction are not independently
+certified. The campaign does not yet certify whole proofs or finite models.
+
+## AddressSanitizer
+
+```sh
+python3 checks/testing/run.py run --build build/testing/asan --suite all \
+  --asan --jobs 4 --output build/testing/results/asan-all
+```
+
+`--asan` keeps leak detection enabled and uses `abort_on_error=0:exitcode=98`.
+The abort path can enter Vampire's signal handler during shutdown and hang
+after printing a diagnostic. The runner retains diagnostics even after a wall
+timeout. It uses `-m 0` for primary solver commands without an explicit memory
+limit because the default address-space limit interferes with ASan. Explicit
+memory-limit cases retain their limits. Round-trip validator subprocesses still
+use Vampire's default memory limit; inspect those logs before attributing a
+validator failure to a solver defect.
+
+Logical checks and memory checks have separate result fields. A correct solver
+answer with a memory error fails the case. Instrumentation may replace the exit
+code, so some logical checks remain inconclusive. Option discovery saves its
+logs and cannot prevent independent suites from running. A discovery failure
+still fails the overall run. No-Z3 builds check explicit rejection of corpus
+options requiring Z3; these are capability checks, not successful proof searches.
 
 ## Coverage
 
 The lcov script combines an initial zero-hit capture with the executed capture,
 so unexecuted instrumented objects stay in the denominator. It reports lines,
 functions, and branches, and creates `html/index.html` plus a machine-readable
-per-file summary. The tested build configuration determines which source files
+per-file summary. Function coverage counts each named template instance or
+alias, matching lcov's displayed summary. The report also retains source-location
+function groups (`FNF`/`FNH`), which can have a higher percentage. Both must
+reach 100% for the gate to pass. The tested build configuration determines which source files
 are compiled; this is not coverage of every possible build configuration.
 
 Reports include Vampire implementation, debug support, and the bundled Minisat
@@ -166,16 +250,16 @@ The following work is still needed for broader assurance:
   not a suitable oracle.
 - Add metamorphic tests for alpha-renaming, equality symmetry, clause ordering,
   and redundant premises across preprocessing and inference configurations.
-- Check proof output independently, with unsupported proof steps counted
-  separately, and validate models against the original input.
+- Extend the emitted-obligation checks to whole-proof certification and validate
+  models against the original input.
 - Run the remaining build profiles, compiler/platform combinations, resource
   boundaries, portfolio workers, and larger external TPTP/SMT-LIB corpora.
 - Add deterministic reproductions for confirmed failures and track coverage
   changes between revisions. Keep timing-sensitive performance measurements
   separate from correctness checks.
 
-No percentage threshold currently turns this campaign into a claim of complete
-testing. Uncovered or untested areas remain visible in the inventory and reports.
+The campaign requires 100% line, function, and branch coverage to pass its coverage gate.
+Reaching that threshold would still not prove complete testing. Uncovered or untested areas remain visible in the inventory and reports.
 
 To cross-check the generated SMT expectations and group memory reports:
 
@@ -212,6 +296,6 @@ tests when closed. Terminal clearing is used only on an interactive terminal.
 
 Use `--resume` with the original run command to continue unfinished cases.
 The runner checks the build hashes, seed, selection, and saved commands before
-reusing results. Worker count and wall timeout may change. Completed failures
+reusing results. Harness hashes and the sanitizer environment must also match. Worker count and wall timeout may change. Completed failures
 and inconclusive cases remain recorded; they are not silently retried or erased.
 Interrupted case directories are archived before rerunning those cases.

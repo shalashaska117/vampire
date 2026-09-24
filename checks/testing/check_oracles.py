@@ -17,7 +17,7 @@ def main():
     seen, answers = set(), []
     for case in cases:
         path = case.get('source', '')
-        if not path.endswith('.smt2') or not case['name'].startswith('generated/') or path in seen:
+        if not path.endswith('.smt2') or not case['name'].startswith(('generated/', 'edge/theory/')) or path in seen:
             continue
         seen.add(path)
         result = subprocess.run([args.z3, path], text=True, capture_output=True, timeout=10)

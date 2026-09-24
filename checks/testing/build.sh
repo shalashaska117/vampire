@@ -19,6 +19,11 @@ case "$profile" in
     args+=(-DCMAKE_BUILD_TYPE=Debug -DCHECK_LEAKS=ON -DUBSAN=ON
       -DCMAKE_CXX_FLAGS=-fno-sanitize-recover=undefined)
     targets=(vampire vtest) ;;
+  asan)
+    args+=(-DCMAKE_BUILD_TYPE=Debug -DCHECK_LEAKS=ON
+      '-DCMAKE_CXX_FLAGS=-fsanitize=address -fno-omit-frame-pointer'
+      -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address)
+    targets=(vampire vtest) ;;
   release)
     args+=(-DCMAKE_BUILD_TYPE=Release)
     targets=(vampire) ;;

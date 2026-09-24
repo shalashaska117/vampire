@@ -55,16 +55,8 @@ def main():
     run('html', [genhtml, *consistency, '--branch-coverage', str(output / 'coverage.info'),
                  '--output-directory', str(output / 'html'), '--prefix', str(ROOT)])
     run('summary', common + ['--summary', str(output / 'coverage.info')])
-    totals = {key: 0 for key in ('LF', 'LH', 'FNF', 'FNH', 'BRF', 'BRH')}
-    files, current = [], {}
-    for line in (output / 'coverage.info').read_text().splitlines():
-        if line.startswith('SF:'): current = {'path': line[3:]}
-        elif ':' in line and line.split(':', 1)[0] in totals:
-            key, value = line.split(':', 1)
-            totals[key] += int(value)
-            current[key] = int(value)
-        elif line == 'end_of_record': files.append(current)
-    (output / 'summary.json').write_text(json.dumps({'totals': totals, 'files': files}, indent=2))
+    from campaign import coverage_gaps
+    (output / 'summary.json').write_text(json.dumps(coverage_gaps(output / 'coverage.info'), indent=2))
     print((output / 'summary.log').read_text())
     print(f'HTML: {output / "html/index.html"}')
 
